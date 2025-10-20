@@ -31,6 +31,7 @@ async function searchWithCache(
   // 先查缓存
   const cached = getCachedSearchPage(apiSite.key, query, page);
   if (cached) {
+    console.log(`搜索缓存 [${apiSite.name}]: 命中缓存`, cached.status, '结果数量', cached.data.length);
     if (cached.status === 'ok') {
       return { results: cached.data, pageCount: cached.pageCount };
     } else {
@@ -38,19 +39,24 @@ async function searchWithCache(
     }
   }
 
+  console.log(`搜索缓存 [${apiSite.name}]: 缓存未命中，发起网络请求`);
+
   // 缓存未命中，发起网络请求
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
+    console.log(`搜索网络 [${apiSite.name}]: 发起请求`, url);
     const response = await fetch(url, {
       headers: API_CONFIG.search.headers,
       signal: controller.signal,
     });
 
     clearTimeout(timeoutId);
+    console.log(`搜索网络 [${apiSite.name}]: 响应状态`, response.status);
 
     if (!response.ok) {
+      console.log(`搜索网络 [${apiSite.name}]: 请求失败`, response.status, response.statusText);
       if (response.status === 403) {
         setCachedSearchPage(apiSite.key, query, page, 'forbidden', []);
       }
@@ -58,12 +64,20 @@ async function searchWithCache(
     }
 
     const data = await response.json();
+    console.log(`搜索网络 [${apiSite.name}]: 响应数据`, {
+      hasData: !!data,
+      hasList: !!(data && data.list),
+      listLength: data?.list?.length || 0,
+      pageCount: data?.pagecount
+    });
+
     if (
       !data ||
       !data.list ||
       !Array.isArray(data.list) ||
       data.list.length === 0
     ) {
+      console.log(`搜索网络 [${apiSite.name}]: 数据为空或格式错误`);
       // 空结果不做负缓存要求，这里不写入缓存
       return { results: [] };
     }
@@ -119,15 +133,18 @@ async function searchWithCache(
 
     // 过滤掉集数为 0 的结果
     const results = allResults.filter((result: SearchResult) => result.episodes.length > 0);
+    console.log(`搜索处理 [${apiSite.name}]: 原始结果数量`, allResults.length, '过滤后结果数量', results.length);
 
     const pageCount = page === 1 ? data.pagecount || 1 : undefined;
     // 写入缓存（成功）
     setCachedSearchPage(apiSite.key, query, page, 'ok', results, pageCount);
+    console.log(`搜索处理 [${apiSite.name}]: 缓存写入成功，结果数量`, results.length);
     return { results, pageCount };
   } catch (error: any) {
     clearTimeout(timeoutId);
     // 识别被 AbortController 中止（超时）
     const aborted = error?.name === 'AbortError' || error?.code === 20 || error?.message?.includes('aborted');
+    console.log(`搜索错误 [${apiSite.name}]:`, error?.message || error, '是否超时:', aborted);
     if (aborted) {
       setCachedSearchPage(apiSite.key, query, page, 'timeout', []);
     }
@@ -144,10 +161,14 @@ export async function searchFromApi(
     const apiUrl =
       apiBaseUrl + API_CONFIG.search.path + encodeURIComponent(query);
 
+    console.log(`搜索API [${apiSite.name}]: 开始搜索`, query, 'URL:', apiUrl);
+
     // 使用新的缓存搜索函数处理第一页
     const firstPageResult = await searchWithCache(apiSite, query, 1, apiUrl, 8000);
     const results = firstPageResult.results;
     const pageCountFromFirst = firstPageResult.pageCount;
+
+    console.log(`搜索API [${apiSite.name}]: 第一页结果数量`, results.length, '总页数', pageCountFromFirst);
 
     const config = await getConfig();
     const MAX_SEARCH_PAGES: number = config.SiteConfig.SearchDownstreamMaxPage;
@@ -188,8 +209,10 @@ export async function searchFromApi(
       });
     }
 
+    console.log(`搜索API [${apiSite.name}]: 最终结果数量`, results.length);
     return results;
   } catch (error) {
+    console.error(`搜索API [${apiSite.name}]: 搜索出错`, error);
     return [];
   }
 }
