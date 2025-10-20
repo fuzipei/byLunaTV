@@ -39,17 +39,25 @@ interface DebugInfo {
 
 export default function DebugPage() {
   const [debugInfo, setDebugInfo] = useState<DebugInfo | null>(null);
+  const [authInfo, setAuthInfo] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch('/api/debug/search')
-      .then(res => res.json())
-      .then(data => {
-        if (data.error) {
-          setError(data.error);
+    Promise.all([
+      fetch('/api/debug/search').then(res => res.json()),
+      fetch('/api/debug/auth').then(res => res.json())
+    ])
+      .then(([searchData, authData]) => {
+        if (searchData.error) {
+          setError(searchData.error);
         } else {
-          setDebugInfo(data);
+          setDebugInfo(searchData);
+        }
+        if (authData.error) {
+          console.error('认证调试错误:', authData.error);
+        } else {
+          setAuthInfo(authData);
         }
         setLoading(false);
       })
@@ -76,6 +84,48 @@ export default function DebugPage() {
       <h1 className="text-2xl font-bold mb-6">搜索调试信息</h1>
 
       <div className="space-y-6">
+        {/* 认证调试信息 */}
+        {authInfo && (
+          <div className="bg-red-100 p-4 rounded">
+            <h2 className="text-lg font-semibold mb-2 text-red-800">认证调试信息</h2>
+            <div className="space-y-2">
+              <div>
+                <h3 className="font-semibold">环境变量</h3>
+                <p>存储类型: {authInfo.environment?.storageType}</p>
+                <p>有密码: {authInfo.environment?.hasPassword ? '是' : '否'}</p>
+                <p>有用户名: {authInfo.environment?.hasUsername ? '是' : '否'}</p>
+                <p>密码长度: {authInfo.environment?.passwordLength}</p>
+                <p>用户名: {authInfo.environment?.username}</p>
+              </div>
+              <div>
+                <h3 className="font-semibold">Cookie 信息</h3>
+                <p>总 Cookie 数: {authInfo.cookies?.total}</p>
+                <p>认证 Cookie: {authInfo.cookies?.authCookie ? '存在' : '不存在'}</p>
+                {authInfo.cookies?.authCookie && (
+                  <p>认证 Cookie 值: {authInfo.cookies.authCookie.value.substring(0, 100)}...</p>
+                )}
+              </div>
+              <div>
+                <h3 className="font-semibold">解析的认证信息</h3>
+                {authInfo.authInfo ? (
+                  <div className="space-y-1">
+                    <p>有用户名: {authInfo.authInfo.hasUsername ? '是' : '否'}</p>
+                    <p>有密码: {authInfo.authInfo.hasPassword ? '是' : '否'}</p>
+                    <p>有签名: {authInfo.authInfo.hasSignature ? '是' : '否'}</p>
+                    <p>有时间戳: {authInfo.authInfo.hasTimestamp ? '是' : '否'}</p>
+                    <p>用户名: {authInfo.authInfo.username || '无'}</p>
+                    <p>密码长度: {authInfo.authInfo.passwordLength}</p>
+                    <p>签名长度: {authInfo.authInfo.signatureLength}</p>
+                    <p>时间戳: {authInfo.authInfo.timestamp || '无'}</p>
+                  </div>
+                ) : (
+                  <p className="text-red-600">无法解析认证信息</p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* 用户信息 */}
         <div className="bg-gray-100 p-4 rounded">
           <h2 className="text-lg font-semibold mb-2">用户信息</h2>
